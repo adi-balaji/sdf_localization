@@ -61,4 +61,3 @@ while True:
     vis.update_renderer()
 
 vis.destroy_window()
-
