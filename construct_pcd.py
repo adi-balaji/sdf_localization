@@ -26,16 +26,16 @@ def translate_mesh(mesh, x, y, z):
 
 OBJS_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/objs/"
 
-mesh = o3d.io.read_triangle_mesh(os.path.join(OBJS_DIR, "drill.obj"))
+mesh = o3d.io.read_triangle_mesh(os.path.join(OBJS_DIR, "wrench.obj"))
 mesh.compute_vertex_normals()
 
 transformed_mesh = copy.deepcopy(mesh)
 rotate_mesh(transformed_mesh, np.pi/3, np.pi/6, 0)
 translate_mesh(transformed_mesh, 0.35, 0.1, 0.05)
 
-pcd = mesh.sample_points_uniformly(number_of_points=700)
-transformed_pcd = transformed_mesh.sample_points_uniformly(number_of_points=700)
+pcd = mesh.sample_points_uniformly(number_of_points=1000)
+transformed_pcd = transformed_mesh.sample_points_uniformly(number_of_points=1000)
 o3d.visualization.draw_geometries([pcd, transformed_pcd])
 
-o3d.io.write_point_cloud("/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/pcd/transformed_drill.pcd", transformed_pcd)
+o3d.io.write_point_cloud("/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/pcd/transformed_large_wrench.pcd", transformed_pcd)
 

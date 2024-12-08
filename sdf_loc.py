@@ -28,7 +28,7 @@ obj = pv.MeshObjectFactory(os.path.join(OBJS_DIR, "drill.obj"))  # Create mesh o
 drill_sdf = pv.MeshSDF(obj)  # Compute SDF for the mesh object
 
 drill_view_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_drill.pcd"))
-R_test = drill_view_pcd.get_rotation_matrix_from_xyz((0., -0.0, 0.0))
+R_test = drill_view_pcd.get_rotation_matrix_from_xyz((0.0, -0.0, 0.0))
 drill_view_pcd.rotate(R_test, center=drill_view_pcd.get_center())
 
 drill_np = np.asarray(drill_view_pcd.points)
