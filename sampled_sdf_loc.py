@@ -5,9 +5,29 @@ import pytorch_volumetric as pv
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-import copy
+from scipy.spatial.transform import Rotation
 
-def sample_n_rotations(n_rotations):
+def random_so3_sample(n):
+
+    # Generate a random quaternion
+    Rs = torch.zeros((n, 3, 3), dtype=torch.float32)
+
+    for i in range(n):
+        u1, u2, u3 = np.random.rand(3)  # Uniform random numbers in [0, 1)
+
+        # Convert to quaternion
+        q0 = np.sqrt(1 - u1) * np.sin(2 * np.pi * u2)
+        q1 = np.sqrt(1 - u1) * np.cos(2 * np.pi * u2)
+        q2 = np.sqrt(u1) * np.sin(2 * np.pi * u3)
+        q3 = np.sqrt(u1) * np.cos(2 * np.pi * u3)
+        quaternion = np.array([q0, q1, q2, q3])
+
+        # Convert quaternion to rotation matrix
+        rotation_matrix = Rotation.from_quat(quaternion).as_matrix()
+        Rs[i] = torch.tensor(rotation_matrix, dtype=torch.float32)
+    return Rs
+
+def super_fibinacci_so3_samples(n_rotations):
 
     R_samples = torch.zeros((n_rotations, 3, 3), dtype=torch.float32)
     phi = math.sqrt(2.0)
@@ -24,11 +44,8 @@ def sample_n_rotations(n_rotations):
         q = torch.tensor([r*math.sin(alpha), r*math.cos(alpha), R*math.sin(beta), R*math.cos(beta)], dtype=torch.float32)
         q0, q1, q2, q3 = q
 
-        R = torch.tensor([
-            [1 - 2*q2**2 - 2*q3**2, 2*q1*q2 - 2*q0*q3, 2*q1*q3 + 2*q0*q2],
-            [2*q1*q2 + 2*q0*q3, 1 - 2*q1**2 - 2*q3**2, 2*q2*q3 - 2*q0*q1],
-            [2*q1*q3 - 2*q0*q2, 2*q2*q3 + 2*q0*q1, 1 - 2*q1**2 - 2*q2**2]
-        ], dtype=torch.float32)
+        R = Rotation.from_quat([q0, q1, q2, q3]).as_matrix()
+        R = torch.tensor(R, dtype=torch.float32)
 
         R_samples[i] = R
 
@@ -39,31 +56,29 @@ PCD_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/pcd/"
 RESOLUTION = 0.005
 DEVICE = "cpu"
 STEP_SIZE = 1e-3 # 1e-3
-STEP_SIZE_ROT = 1e-4    # 1e-3
+STEP_SIZE_ROT = 1e-4    # 1e-4
 plot_loss = False
 visualize = True
-R_samples = sample_n_rotations(20)
+R_samples = super_fibinacci_so3_samples(20)
+# R_samples = random_so3_sample(20)
 
 if visualize:
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name="SDF Localization")
 
-GT_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "bottle.pcd"))
+GT_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "drill.pcd"))
 GT_pcd.paint_uniform_color([0.0, 0.0, 0.7])
 updated_pcd = o3d.geometry.PointCloud()  # Initialize scene point cloud
 if visualize:
     vis.add_geometry(GT_pcd)
     vis.add_geometry(updated_pcd)
 
-obj = pv.MeshObjectFactory(os.path.join(OBJS_DIR, "bottle.obj"))  # Create mesh object for PV
-bottle_sdf = pv.MeshSDF(obj)  # Compute SDF for the mesh object
+obj = pv.MeshObjectFactory(os.path.join(OBJS_DIR, "drill.obj"))  # Create mesh object for PV
+drill_sdf = pv.MeshSDF(obj)  # Compute SDF for the mesh object
 
-bottle_view_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_large_bottle.pcd"))
-R_test = bottle_view_pcd.get_rotation_matrix_from_xyz((0.0, -0.0, 0.0))
-bottle_view_pcd.rotate(R_test, center=bottle_view_pcd.get_center())
-
-bottle_np = np.asarray(bottle_view_pcd.points)
-bottle_pcd_tensor = torch.tensor(bottle_np, dtype=torch.float32)  # Convert scene point cloud to tensor
+drill_view_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_large_drill.pcd"))
+drill_np = np.asarray(drill_view_pcd.points)
+drill_pcd_tensor = torch.tensor(drill_np, dtype=torch.float32)  # Convert scene point cloud to tensor
 
 min_loss = float('inf')
 min_loss_R = None
@@ -71,7 +86,7 @@ min_loss_t = None
 
 for j, init_R in enumerate(R_samples):
 
-    t = torch.mean(bottle_pcd_tensor, dim=0)
+    t = torch.zeros(3)
     R = init_R
     losses = []
     rot_losses = []
@@ -89,8 +104,8 @@ for j, init_R in enumerate(R_samples):
     # Objective function
     for i in range(500):
         
-        t_pcd = bottle_pcd_tensor @ R + t.T  # transformation
-        sdf_vals_tr, sdf_grads_tr = bottle_sdf(t_pcd)  # SDF values and gradients
+        t_pcd = drill_pcd_tensor @ R + t.T  # transformation
+        sdf_vals_tr, sdf_grads_tr = drill_sdf(t_pcd)  # SDF values and gradients
 
         # compute dF/dt
         dF_dt = 2 * (sdf_vals_tr[:, None] * sdf_grads_tr).sum(dim=0)
@@ -101,8 +116,8 @@ for j, init_R in enumerate(R_samples):
         sdf_normals = sdf_normals / sdf_normals.norm(dim=1, keepdim=True)
 
         # Compute cosine similarity
-        bottle_view_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
-        scene_normals_np = np.asarray(bottle_view_pcd.normals)
+        drill_view_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+        scene_normals_np = np.asarray(drill_view_pcd.normals)
         scene_normals = torch.tensor(scene_normals_np, dtype=torch.float32)
         cos_sim = (scene_normals * sdf_normals).sum(dim=1)  # Dot product
 
@@ -155,6 +170,8 @@ print("Rotation:")
 print(min_loss_R)
 print("Translation:")
 print(min_loss_t)
+
+o3d.visualization.draw_geometries([GT_pcd, drill_view_pcd.rotate(min_loss_R.T.numpy(), center=drill_view_pcd.get_center()).translate(min_loss_t.numpy())])
 
 
 
