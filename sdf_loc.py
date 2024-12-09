@@ -11,8 +11,8 @@ OBJS_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/objs/"
 PCD_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/pcd/"
 RESOLUTION = 0.005
 DEVICE = "cpu"
-STEP_SIZE = 1e-3 # 1e-3
-STEP_SIZE_ROT = 1e-4    # 1e-3
+STEP_SIZE = 1e-4 # 1e-3
+STEP_SIZE_ROT = 1e-4   # 1e-3
 plot_loss = False
 
 vis = o3d.visualization.Visualizer()

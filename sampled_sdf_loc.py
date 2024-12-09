@@ -7,6 +7,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 
+def sample_six_opposite_rotations():
+    Rs = torch.zeros((6, 3, 3), dtype=torch.float32)
+
+    Rs[0] = torch.tensor([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=torch.float32)
+    Rs[1] = torch.tensor([[1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=torch.float32)
+    Rs[2] = torch.tensor([[1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=torch.float32)
+    Rs[3] = torch.tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=torch.float32)
+    Rs[4] = torch.tensor([[-1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=torch.float32)
+    Rs[5] = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=torch.float32)
+
+    return Rs
+
 def has_converged(losses, window_size=25):
 
     if len(losses) < window_size:
@@ -65,30 +77,31 @@ OBJS_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/objs/"
 PCD_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/pcd/"
 RESOLUTION = 0.005
 DEVICE = "cpu"
-STEP_SIZE = 1e-3 # 1e-3
-STEP_SIZE_ROT = 1e-4    # 1e-4
+STEP_SIZE = 1e-3 # 1e-3, 1e-4
+STEP_SIZE_ROT = 1e-4    # 1e-3, 1e-4
 plot_loss = False
 visualize = True
-R_samples = super_fibinacci_so3_samples(20)
+# R_samples = sample_six_opposite_rotations()
 # R_samples = random_so3_sample(20)
+R_samples = super_fibinacci_so3_samples(20)
 
 if visualize:
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name="SDF Localization")
 
-GT_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "bottle.pcd"))
+GT_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "drill.pcd"))
 GT_pcd.paint_uniform_color([0.0, 0.0, 0.7])
 updated_pcd = o3d.geometry.PointCloud()  # Initialize scene point cloud
 if visualize:
     vis.add_geometry(GT_pcd)
     vis.add_geometry(updated_pcd)
 
-obj = pv.MeshObjectFactory(os.path.join(OBJS_DIR, "bottle.obj"))  # Create mesh object for PV
-bottle_sdf = pv.MeshSDF(obj)  # Compute SDF for the mesh object
+obj = pv.MeshObjectFactory(os.path.join(OBJS_DIR, "drill.obj"))  # Create mesh object for PV
+drill_sdf = pv.MeshSDF(obj)  # Compute SDF for the mesh object
 
-bottle_view_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_large_bottle.pcd"))
-bottle_np = np.asarray(bottle_view_pcd.points)
-bottle_pcd_tensor = torch.tensor(bottle_np, dtype=torch.float32)  # Convert scene point cloud to tensor
+drill_view_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_large_drill.pcd"))
+drill_np = np.asarray(drill_view_pcd.points)
+drill_pcd_tensor = torch.tensor(drill_np, dtype=torch.float32)  # Convert scene point cloud to tensor
 
 min_loss = float('inf')
 min_loss_R = None
@@ -112,10 +125,10 @@ for j, init_R in enumerate(R_samples):
         ax.legend()
 
     # Objective function
-    while not has_converged(losses) and len(losses) < 1000:
+    while len(losses) < 1000:
         
-        t_pcd = bottle_pcd_tensor @ R + t.T  # transformation
-        sdf_vals_tr, sdf_grads_tr = bottle_sdf(t_pcd)  # SDF values and gradients
+        t_pcd = drill_pcd_tensor @ R + t.T  # transformation
+        sdf_vals_tr, sdf_grads_tr = drill_sdf(t_pcd)  # SDF values and gradients
 
         # compute dF/dt
         dF_dt = 2 * (sdf_vals_tr[:, None] * sdf_grads_tr).sum(dim=0)
@@ -126,14 +139,14 @@ for j, init_R in enumerate(R_samples):
         sdf_normals = sdf_normals / sdf_normals.norm(dim=1, keepdim=True)
 
         # Compute cosine similarity
-        bottle_view_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
-        scene_normals_np = np.asarray(bottle_view_pcd.normals)
+        drill_view_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+        scene_normals_np = np.asarray(drill_view_pcd.normals)
         scene_normals = torch.tensor(scene_normals_np, dtype=torch.float32)
         cos_sim = (scene_normals * sdf_normals).sum(dim=1)  # Dot product
 
         outer = scene_normals.unsqueeze(2) * sdf_grads_tr.unsqueeze(1) 
         dF_dR = 2 * (1 - cos_sim).unsqueeze(1).unsqueeze(2) * outer 
-        dF_dR = dF_dR.sum(dim=0)  # Sum over all points
+        dF_dR = dF_dR.sum(dim=0)
 
         # Update translation t
         t = t - STEP_SIZE * dF_dt
@@ -181,7 +194,7 @@ print(min_loss_R)
 print("Translation:")
 print(min_loss_t)
 
-o3d.visualization.draw_geometries([GT_pcd, bottle_view_pcd.rotate(min_loss_R.T.numpy(), center=bottle_view_pcd.get_center()).translate(-min_loss_t.numpy())])
+o3d.visualization.draw_geometries([GT_pcd, drill_view_pcd.rotate(min_loss_R.T.numpy(), center=drill_view_pcd.get_center()).translate(-min_loss_t.numpy())])
 
 
 
