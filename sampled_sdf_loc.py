@@ -7,6 +7,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 
+def has_converged(losses, window_size=50):
+
+    if len(losses) < window_size:
+        return False
+    
+    if abs((sum(losses[-window_size:])) - window_size*losses[-1]) < 1e-4:
+        return True
+    
+    return False
+
 def random_so3_sample(n):
 
     # Generate a random quaternion
@@ -57,7 +67,7 @@ RESOLUTION = 0.005
 DEVICE = "cpu"
 STEP_SIZE = 1e-3 # 1e-3
 STEP_SIZE_ROT = 1e-4    # 1e-4
-plot_loss = False
+plot_loss = True
 visualize = True
 R_samples = super_fibinacci_so3_samples(20)
 # R_samples = random_so3_sample(20)
@@ -102,7 +112,7 @@ for j, init_R in enumerate(R_samples):
         ax.legend()
 
     # Objective function
-    for i in range(500):
+    while not has_converged(losses) and len(losses) < 1000:
         
         t_pcd = drill_pcd_tensor @ R + t.T  # transformation
         sdf_vals_tr, sdf_grads_tr = drill_sdf(t_pcd)  # SDF values and gradients
