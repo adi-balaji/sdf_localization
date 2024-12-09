@@ -6,6 +6,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
+from sklearn.decomposition import PCA
 
 def sample_six_opposite_rotations():
     Rs = torch.zeros((6, 3, 3), dtype=torch.float32)
@@ -73,8 +74,16 @@ def super_fibinacci_so3_samples(n_rotations):
 
     return R_samples
 
-OBJS_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/objs/"
-PCD_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/pcd/"
+def principal_axis_from_pc(point_cloud):
+    pc_np = np.asarray(point_cloud.points)
+    pca_pc = PCA(n_components=3)
+    pca_pc.fit(pc_np)
+    eigen_vals_pc = pca_pc.explained_variance_
+    axes_pc = pca_pc.components_
+    return axes_pc[0] * 3 * np.sqrt(eigen_vals_pc[0]) 
+
+OBJS_DIR = "objs/"
+PCD_DIR = "pcd/"
 RESOLUTION = 0.005
 DEVICE = "cpu"
 STEP_SIZE = 1e-3 # 1e-3, 1e-4
