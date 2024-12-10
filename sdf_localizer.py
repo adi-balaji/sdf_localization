@@ -23,8 +23,8 @@ class SDFLocalizer():
         self.gt_json_data = None
 
         self.sdf = None
-        self.R = None
-        self.t = None
+        self.R = torch.eye(3, dtype=torch.float32)
+        self.t = torch.zeros(3)
 
         self.gt_pcd = None
         self.scene_pcd = None
@@ -228,7 +228,7 @@ class SDFLocalizer():
 
 if __name__ == "__main__":
 
-    object_name = "mug"
+    object_name = "cheezit"
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
 
