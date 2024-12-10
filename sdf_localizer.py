@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 from sklearn.decomposition import PCA
 import time
+import json
 
 class SDFLocalizer():
 
@@ -17,7 +18,9 @@ class SDFLocalizer():
         self.STEP_SIZE_ROT = 1e-4    # 1e-3, 1e-4
         self.plot_loss = False
         self.visualize = True
-        self.MAX_ITER = 700
+        self.MAX_ITER = 1250
+        self.GT_PATH = None
+        self.gt_json_data = None
 
         self.sdf = None
         self.R = None
@@ -128,6 +131,18 @@ class SDFLocalizer():
         self.scene_pcd = scene_pcd
         self.scene_pcd_tensor = torch.tensor(np.array(self.scene_pcd.points), dtype=torch.float32)
 
+    def load_gt_json(self, gt_json_path):
+        self.GT_PATH = gt_json_path
+        with open(gt_json_path, "r") as f:
+            self.gt_json_data = json.load(f)
+
+    def get_gt_Rt(self, id):
+        Rt = self.gt_json_data[id]
+        gt_R = torch.tensor(Rt["R"], dtype=torch.float32)
+        gt_t = torch.tensor(Rt["t"], dtype=torch.float32)
+
+        return gt_R, gt_t
+
     def initialize_Rt_with_principal_axes(self):
         self.R = self.__rot_mat_from_principal_axes(self.scene_pcd, self.gt_pcd).T
         self.t = -torch.mean(self.scene_pcd_tensor, dim=0)
@@ -225,8 +240,10 @@ if __name__ == "__main__":
 
         sdfl = SDFLocalizer()
         sdfl.load_gt_and_scene_pcd(gt_pcd, scene_pcd)
+        sdfl.load_gt_json(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}/ground_truths.json")
         sdfl.construct_sdf(os.path.join(OBJS_DIR, f"{object_name}.obj"))
         sdfl.initialize_Rt_with_principal_axes()
-        sdfl.localize()
+        R, t = sdfl.localize()
+
 
     
