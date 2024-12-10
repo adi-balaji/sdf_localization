@@ -46,8 +46,9 @@ def rot_mat(a, b):
 
 
 # get point clouds (ground truth and transformed)
-GT_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "drill.pcd"))
-transformed_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_drill.pcd")) 
+GT_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "hammer.pcd"))
+transformed_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_large_hammer.pcd"))
+transformed_pcd.rotate(transformed_pcd.get_rotation_matrix_from_xyz((0.0, -3, 0.0)), center = transformed_pcd.get_center())
 GT_np = np.asarray(GT_pcd.points)
 transformed_np = np.asarray(transformed_pcd.points)
 

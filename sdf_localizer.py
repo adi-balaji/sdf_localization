@@ -145,8 +145,8 @@ class SDFLocalizer():
 
     def initialize_Rt_with_principal_axes(self):
         self.R = self.__rot_mat_from_principal_axes(self.scene_pcd, self.gt_pcd).T
-        self.t = -torch.mean(self.scene_pcd_tensor, dim=0)
-
+        # self.t = -torch.mean(self.scene_pcd_tensor, dim=0)
+        self.t = torch.zeros(3, dtype=torch.float32)
     def localize(self):
 
         if self.visualize:
@@ -228,7 +228,7 @@ class SDFLocalizer():
 
 if __name__ == "__main__":
 
-    object_name = "bottle"
+    object_name = "mug"
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
 

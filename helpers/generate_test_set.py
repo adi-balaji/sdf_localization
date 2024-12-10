@@ -38,7 +38,7 @@ def translate_mesh(mesh, x, y, z):
     mesh.translate([x, y, z])
     return mesh
 
-object_name = "hammer"
+object_name = "bowl"
 num_samples = 25
 OBJS_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/objs/"
 WRITE_DIR = f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}"
