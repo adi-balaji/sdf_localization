@@ -17,7 +17,7 @@ class SDFLocalizer():
         self.STEP_SIZE_ROT = 1e-4    # 1e-3, 1e-4
         self.plot_loss = False
         self.visualize = True
-        self.MAX_ITER = 1000
+        self.MAX_ITER = 700
 
         self.sdf = None
         self.R = None
@@ -130,7 +130,7 @@ class SDFLocalizer():
 
     def initialize_Rt_with_principal_axes(self):
         self.R = self.__rot_mat_from_principal_axes(self.scene_pcd, self.gt_pcd).T
-        self.t = torch.zeros(3)
+        self.t = -torch.mean(self.scene_pcd_tensor, dim=0)
 
     def localize(self):
 
@@ -213,16 +213,20 @@ class SDFLocalizer():
 
 if __name__ == "__main__":
 
+    object_name = "banana"
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
 
-    gt_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "drill.pcd"))
-    scene_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_large_drill.pcd"))
+    gt_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, f"{object_name}.pcd"))
 
-    sdfl = SDFLocalizer()
-    sdfl.load_gt_and_scene_pcd(gt_pcd, scene_pcd)
-    sdfl.construct_sdf(os.path.join(OBJS_DIR, f"drill.obj"))
-    sdfl.initialize_Rt_with_principal_axes()
-    sdfl.localize()
+    for i in range(25):
+
+        scene_pcd = o3d.io.read_point_cloud(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}/{object_name}_{i}.pcd")
+
+        sdfl = SDFLocalizer()
+        sdfl.load_gt_and_scene_pcd(gt_pcd, scene_pcd)
+        sdfl.construct_sdf(os.path.join(OBJS_DIR, f"{object_name}.obj"))
+        sdfl.initialize_Rt_with_principal_axes()
+        sdfl.localize()
 
     
