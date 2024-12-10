@@ -153,7 +153,7 @@ class SDFLocalizer():
             ax.legend()
 
         # Objective function
-        while not self.__has_converged() and len(self.losses) < self.MAX_ITER:
+        while len(self.losses) < self.MAX_ITER:
             
             t_pcd = self.scene_pcd_tensor @ self.R + self.t.T  # transformation
             sdf_vals_tr, sdf_grads_tr = self.sdf(t_pcd)  # SDF values and gradients
@@ -213,7 +213,7 @@ class SDFLocalizer():
 
 if __name__ == "__main__":
 
-    object_name = "banana"
+    object_name = "bottle"
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
 
