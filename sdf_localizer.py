@@ -15,10 +15,10 @@ class SDFLocalizer():
     def __init__(self):
 
         self.STEP_SIZE = 1e-3 # 1e-3, 1e-4
-        self.STEP_SIZE_ROT = 1e-4    # 1e-3, 1e-4
+        self.STEP_SIZE_ROT = 5e-5    # 1e-3, 1e-4, 5e-5
         self.plot_loss = False
         self.visualize = True
-        self.MAX_ITER = 1250
+        self.MAX_ITER = 100
         self.GT_PATH = None
         self.gt_json_data = None
 
@@ -100,6 +100,14 @@ class SDFLocalizer():
         eigen_vals_pc = pca_pc.explained_variance_
         axes_pc = pca_pc.components_
         return axes_pc[0] * 3 * np.sqrt(eigen_vals_pc[0]) 
+    
+    def __pc_principal_two_axes(self, point_cloud):
+        pc_np = np.asarray(point_cloud.points)
+        pca_pc = PCA(n_components=2)
+        pca_pc.fit(pc_np)
+        eigen_vals_pc = pca_pc.explained_variance_
+        axes_pc = pca_pc.components_
+        return axes_pc
 
     def __rot_mat_from_principal_axes(self, pcd_scene, pcd_gt):
         a = self.__pc_principal_axis(pcd_scene)
@@ -120,6 +128,46 @@ class SDFLocalizer():
 
         R = torch.tensor(R, dtype=torch.float32)
         return R
+    
+    def compute_rotation_matrix_from_two_axes(self, scene_pcd, gt_pcd):
+        """
+        Computes the rotation matrix to align two principal axes of the scene to the SDF goal.
+
+        Parameters:
+            scene_axes (np.ndarray): A (2, 3) numpy array representing two principal axes of the scene point cloud.
+            sdf_axes (np.ndarray): A (2, 3) numpy array representing two principal axes of the SDF goal point cloud.
+
+        Returns:
+            np.ndarray: A (3, 3) rotation matrix that aligns the scene axes to the SDF axes.
+        """
+        # Ensure the axes are numpy arrays
+
+        scene_axes = self.__pc_principal_two_axes(scene_pcd)
+        sdf_axes = self.__pc_principal_two_axes(gt_pcd)
+
+        scene_axes = np.asarray(scene_axes)
+        sdf_axes = np.asarray(sdf_axes)
+        
+        # Infer the third axis using the cross product
+        scene_third_axis = np.cross(scene_axes[0], scene_axes[1])
+        sdf_third_axis = np.cross(sdf_axes[0], sdf_axes[1])
+        
+        # Normalize the third axes
+        scene_third_axis = scene_third_axis / np.linalg.norm(scene_third_axis)
+        sdf_third_axis = sdf_third_axis / np.linalg.norm(sdf_third_axis)
+        
+        # Construct the full rotation matrices
+        scene_full_axes = np.vstack((scene_axes, scene_third_axis)).T  # (3, 3)
+        sdf_full_axes = np.vstack((sdf_axes, sdf_third_axis)).T        # (3, 3)
+        
+        # Compute the rotation matrix by aligning the full axes
+        R = sdf_full_axes @ np.linalg.inv(scene_full_axes)
+        
+        # Ensure R is a valid rotation matrix (project to SO(3) using SVD)
+        U, _, Vt = np.linalg.svd(R)
+        R = U @ Vt
+        
+        return torch.tensor(R, dtype=torch.float32)
         
     def construct_sdf(self, obj_path):
         obj = pv.MeshObjectFactory(obj_path)  # Create mesh object for PV
@@ -144,9 +192,12 @@ class SDFLocalizer():
         return gt_R, gt_t
 
     def initialize_Rt_with_principal_axes(self):
-        self.R = self.__rot_mat_from_principal_axes(self.scene_pcd, self.gt_pcd).T
-        # self.t = -torch.mean(self.scene_pcd_tensor, dim=0)
-        self.t = torch.zeros(3, dtype=torch.float32)
+        # self.R = self.__rot_mat_from_principal_axes(self.scene_pcd, self.gt_pcd).T
+        self.R = self.compute_rotation_matrix_from_two_axes(self.scene_pcd, self.gt_pcd).T
+
+        self.t = -torch.mean(self.scene_pcd_tensor, dim=0)
+        # self.t = torch.zeros(3, dtype=torch.float32)
+
     def localize(self):
 
         if self.visualize:
@@ -228,7 +279,7 @@ class SDFLocalizer():
 
 if __name__ == "__main__":
 
-    object_name = "cheezit"
+    object_name = "bowl"
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
 
