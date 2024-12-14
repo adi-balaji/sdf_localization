@@ -9,16 +9,17 @@ from scipy.spatial.transform import Rotation
 from sklearn.decomposition import PCA
 import time
 import json
+import copy
 
 class SDFLocalizer():
 
     def __init__(self):
 
         self.STEP_SIZE = 1e-3 # 1e-3, 1e-4
-        self.STEP_SIZE_ROT = 5e-5    # 1e-3, 1e-4, 5e-5
+        self.STEP_SIZE_ROT = 1e-5    # 1e-3, 1e-4, 5e-5, 1e-6 for partial
         self.plot_loss = False
-        self.visualize = True
-        self.MAX_ITER = 100
+        self.visualize = False
+        self.MAX_ITER = 1000
         self.GT_PATH = None
         self.gt_json_data = None
 
@@ -29,8 +30,10 @@ class SDFLocalizer():
         self.gt_pcd = None
         self.scene_pcd = None
         self.scene_pcd_tensor = None
+        self.updated_pcd = o3d.geometry.PointCloud()
 
         self.losses = []
+        self.final_translation_errors = 0.0
 
     def __random_so3_sample(n):
 
@@ -198,15 +201,14 @@ class SDFLocalizer():
         self.t = -torch.mean(self.scene_pcd_tensor, dim=0)
         # self.t = torch.zeros(3, dtype=torch.float32)
 
-    def localize(self):
+    def localize(self): 
 
         if self.visualize:
             vis = o3d.visualization.Visualizer()
             vis.create_window(window_name="SDF Localization")
             self.gt_pcd.paint_uniform_color([0.0, 0.0, 0.7])
-            updated_pcd = o3d.geometry.PointCloud() 
             vis.add_geometry(self.gt_pcd)
-            vis.add_geometry(updated_pcd)
+            vis.add_geometry(self.updated_pcd)
 
         # Loss plotting setup
         if self.plot_loss:
@@ -253,6 +255,8 @@ class SDFLocalizer():
             current_loss = (sdf_vals_tr ** 2).mean().item() + (1 - cos_sim).mean().item()
             self.losses.append(current_loss)
 
+            self.updated_pcd.points = o3d.utility.Vector3dVector(t_pcd.numpy())
+
             if self.plot_loss:
                 line.set_ydata(self.losses)
                 line.set_xdata(range(len(self.losses)))
@@ -260,12 +264,13 @@ class SDFLocalizer():
                 ax.autoscale_view()
                 plt.pause(0.001)  # Pause to update the plot
 
-            updated_pcd.points = o3d.utility.Vector3dVector(t_pcd.numpy())
-
             if self.visualize:
-                vis.update_geometry(updated_pcd)
+                
+                vis.update_geometry(self.updated_pcd)
                 vis.poll_events()
                 vis.update_renderer()
+
+        self.final_translation_error = torch.norm(torch.tensor(self.gt_pcd.get_center() - self.updated_pcd.get_center()))
 
         if self.visualize:
             vis.destroy_window()
@@ -279,22 +284,42 @@ class SDFLocalizer():
 
 if __name__ == "__main__":
 
-    object_name = "bowl"
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
+    object_name = "mug"
 
-    gt_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, f"{object_name}.pcd"))
+    # gt_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, f"{object_name}.pcd"))
 
     for i in range(25):
 
+        gt_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, f"{object_name}.pcd"))
         scene_pcd = o3d.io.read_point_cloud(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}/{object_name}_{i}.pcd")
 
         sdfl = SDFLocalizer()
+        sdfl.visualize = True
         sdfl.load_gt_and_scene_pcd(gt_pcd, scene_pcd)
         sdfl.load_gt_json(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}/ground_truths.json")
         sdfl.construct_sdf(os.path.join(OBJS_DIR, f"{object_name}.obj"))
         sdfl.initialize_Rt_with_principal_axes()
         R, t = sdfl.localize()
+
+        gt_R, gt_t = sdfl.get_gt_Rt(f"{object_name}_{i}")
+
+        model_points = copy.deepcopy(sdfl.scene_pcd)
+        model_points.translate(gt_t).rotate(gt_R)
+
+        result_points = copy.deepcopy(sdfl.scene_pcd)
+        result_points.translate(t).rotate(R)
+
+        rotation_error = torch.norm(torch.eye(3) - R @ gt_R.T).item() #deviation of matrix products from identity
+        translation_error = sdfl.final_translation_error.item() # L2 norm
+
+        print(f"R, t error: {(rotation_error, translation_error)}")
+
+
+        
+
+
 
 
     
