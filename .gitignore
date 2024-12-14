@@ -1,2 +1,4 @@
 test_pcds
 test_results.json
+test_partial_pcds
+*.csv

@@ -38,10 +38,10 @@ def translate_mesh(mesh, x, y, z):
     mesh.translate([x, y, z])
     return mesh
 
-object_name = "drill"
+object_name = "mug"
 num_samples = 25
 OBJS_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/objs/"
-WRITE_DIR = f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}"
+WRITE_DIR = f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_partial_pcds/{object_name}"
 gt_log_path = os.path.join(WRITE_DIR, "ground_truths.json")
 R_samples = random_so3_sample(num_samples)
 t_samples = random_t_sample(num_samples)
@@ -52,9 +52,18 @@ gt_log = {}
 
 for i, R_sample in enumerate(R_samples):
     transformed_mesh = copy.deepcopy(mesh)
-    transformed_mesh.rotate(R_sample, center=transformed_mesh.get_center())
-    transformed_mesh.translate(t_samples[i])
+    # transformed_mesh.rotate(R_sample, center=transformed_mesh.get_center())
+    # transformed_mesh.translate(t_samples[i])
     pcd = transformed_mesh.sample_points_uniformly(number_of_points=700)
+    pcd_points = np.asarray(pcd.points) 
+    pcd_points = pcd_points[pcd_points[:, 1] > 0.008]
+
+    pcd.points = o3d.utility.Vector3dVector(pcd_points)
+    pcd.rotate(R_sample, center=pcd.get_center())
+    pcd.translate(t_samples[i])
+
+    # o3d.visualization.draw_geometries([pcd])
+    # break
 
     o3d.io.write_point_cloud(f"{WRITE_DIR}/{object_name}_{i}.pcd", pcd)
     gt_log[f"{object_name}_{i}"] = {

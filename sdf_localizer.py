@@ -10,6 +10,7 @@ from sklearn.decomposition import PCA
 import time
 import json
 import copy
+from scipy.spatial import cKDTree
 
 o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
 
@@ -17,11 +18,13 @@ class SDFLocalizer():
 
     def __init__(self):
 
-        self.STEP_SIZE = 1e-3 # 1e-3, 1e-4
-        self.STEP_SIZE_ROT = 1e-5    # 1e-3, 1e-4, 5e-5, 1e-6 for partial
+        self.STEP_SIZE = 1e-4
+        self.STEP_SIZE_ROT = 1e-5
+        # (1e-3, 1e-6) is best for speed, accuracy and stability. (1e-4, 1e-5) is best for visualizing the process
+
         self.plot_loss = False
         self.visualize = False
-        self.MAX_ITER = 100
+        self.MAX_ITER = 500
         self.GT_PATH = None
         self.gt_json_data = None
 
@@ -38,68 +41,15 @@ class SDFLocalizer():
         self.final_translation_errors = 0.0
         self.final_add = 0.0
 
-    def __random_so3_sample(n):
-
-        Rs = torch.zeros((n, 3, 3), dtype=torch.float32)
-
-        for i in range(n):
-            u1, u2, u3 = np.random.rand(3)
-
-            q0 = np.sqrt(1 - u1) * np.sin(2 * np.pi * u2)
-            q1 = np.sqrt(1 - u1) * np.cos(2 * np.pi * u2)
-            q2 = np.sqrt(u1) * np.sin(2 * np.pi * u3)
-            q3 = np.sqrt(u1) * np.cos(2 * np.pi * u3)
-            quaternion = np.array([q0, q1, q2, q3])
-
-            rotation_matrix = Rotation.from_quat(quaternion).as_matrix()
-            Rs[i] = torch.tensor(rotation_matrix, dtype=torch.float32)
-        return Rs
-
-    def __super_fibinacci_so3_samples(n_rotations):
-
-        R_samples = torch.zeros((n_rotations, 3, 3), dtype=torch.float32)
-        phi = math.sqrt(2.0)
-        psi = 1.533751168755204288118041
-
-        for i in range(n_rotations):
-
-            s = i+0.5
-            r = math.sqrt(s/n_rotations)
-            R = math.sqrt(1.0-s/n_rotations)
-            alpha = 2.0 * torch.pi * s / phi
-            beta = 2.0 * torch.pi * s / psi
-
-            q = torch.tensor([r*math.sin(alpha), r*math.cos(alpha), R*math.sin(beta), R*math.cos(beta)], dtype=torch.float32)
-            q0, q1, q2, q3 = q
-
-            R = Rotation.from_quat([q0, q1, q2, q3]).as_matrix()
-            R = torch.tensor(R, dtype=torch.float32)
-
-            R_samples[i] = R
-
-        return R_samples
-
-    def __calculate_slope(self, y_values):
-        x_values = np.arange(len(y_values))
-        x_mean = np.mean(x_values)
-        y_mean = np.mean(y_values)
-        
-        numerator = np.sum((x_values - x_mean) * (y_values - y_mean))
-        denominator = np.sum((x_values - x_mean) ** 2)
-        slope = numerator / denominator
-    
-        return slope
-
-    def __has_converged(self, window_size=50):
-        if len(self.losses) < window_size:
-            return False
-
-        loss_window = self.losses[-window_size:]
-        loss_window_slope = self.__calculate_slope(loss_window)
-        
-        return np.abs(loss_window_slope) < 1e-7
-
     def __pc_principal_axis(self, point_cloud):
+        """
+        Computes the principal axis of a point cloud using PCA from sklearn.decomposition
+
+        Parameters: point_cloud (open3d.geometry.PointCloud): Point cloud to compute the principal axis for.
+        Returns: np.ndarray: Principal axis of the point cloud (best axis according to eigenvalues from PCA)
+
+        (not used)
+        """
         pc_np = np.asarray(point_cloud.points)
         pca_pc = PCA(n_components=3)
         pca_pc.fit(pc_np)
@@ -108,6 +58,13 @@ class SDFLocalizer():
         return axes_pc[0] * 3 * np.sqrt(eigen_vals_pc[0]) 
     
     def __pc_principal_two_axes(self, point_cloud):
+        """
+        Computes TWO principal axes of a point cloud using PCA from sklearn.decomposition
+
+        Parameters: point_cloud (open3d.geometry.PointCloud): Point cloud to compute the principal axes for.
+        Returns: np.ndarray (2, 3): 2 best principal axes of the point cloud (best axess according to eigenvalues from PCA)
+        
+        """        
         pc_np = np.asarray(point_cloud.points)
         pca_pc = PCA(n_components=2)
         pca_pc.fit(pc_np)
@@ -116,6 +73,11 @@ class SDFLocalizer():
         return axes_pc
 
     def __rot_mat_from_principal_axes(self, pcd_scene, pcd_gt):
+        """
+        Computes the rotation matrix to align the principal axis of the scene to the SDF points.
+
+        (not used)
+        """
         a = self.__pc_principal_axis(pcd_scene)
         b = self.__pc_principal_axis(pcd_gt)
 
@@ -135,7 +97,7 @@ class SDFLocalizer():
         R = torch.tensor(R, dtype=torch.float32)
         return R
     
-    def compute_rotation_matrix_from_two_axes(self, scene_pcd, gt_pcd):
+    def __compute_rotation_matrix_from_two_axes(self, scene_pcd, gt_pcd):
         """
         Computes the rotation matrix to align two principal axes of the scene to the SDF goal.
 
@@ -144,9 +106,8 @@ class SDFLocalizer():
             sdf_axes (np.ndarray): A (2, 3) numpy array representing two principal axes of the SDF goal point cloud.
 
         Returns:
-            np.ndarray: A (3, 3) rotation matrix that aligns the scene axes to the SDF axes.
+            torch.tensor: R (3, 3) rotation matrix that aligns the scene axes to the SDF axes.
         """
-        # Ensure the axes are numpy arrays
 
         scene_axes = self.__pc_principal_two_axes(scene_pcd)
         sdf_axes = self.__pc_principal_two_axes(gt_pcd)
@@ -154,43 +115,61 @@ class SDFLocalizer():
         scene_axes = np.asarray(scene_axes)
         sdf_axes = np.asarray(sdf_axes)
         
-        # Infer the third axis using the cross product
         scene_third_axis = np.cross(scene_axes[0], scene_axes[1])
         sdf_third_axis = np.cross(sdf_axes[0], sdf_axes[1])
         
-        # Normalize the third axes
+        # normalize the third axis
         scene_third_axis = scene_third_axis / np.linalg.norm(scene_third_axis)
         sdf_third_axis = sdf_third_axis / np.linalg.norm(sdf_third_axis)
         
-        # Construct the full rotation matrices
+        # construct 3 axis frame
         scene_full_axes = np.vstack((scene_axes, scene_third_axis)).T  # (3, 3)
         sdf_full_axes = np.vstack((sdf_axes, sdf_third_axis)).T        # (3, 3)
         
-        # Compute the rotation matrix by aligning the full axes
+        # compute the rotation matrix by aligning the 3 axis frames
         R = sdf_full_axes @ np.linalg.inv(scene_full_axes)
         
-        # Ensure R is a valid rotation matrix (project to SO(3) using SVD)
+        # enforce SO(3) constraint using SVD
         U, _, Vt = np.linalg.svd(R)
         R = U @ Vt
         
         return torch.tensor(R, dtype=torch.float32)
         
     def construct_sdf(self, obj_path):
+        """
+        Constructs the SDF for the object mesh using pytorch volumetric.
+        
+        Parameters: obj_path (str): Path to the object mesh file.
+        """
+
+
         obj = pv.MeshObjectFactory(obj_path)  # Create mesh object for PV
         sdf = pv.MeshSDF(obj)  # Compute SDF for the mesh object
         self.sdf = sdf
 
     def load_gt_and_scene_pcd(self, gt_pcd, scene_pcd):
+        """
+        Loads the ground truth and scene point clouds into SDFLocalizer.
+        """
+
         self.gt_pcd = gt_pcd
         self.scene_pcd = scene_pcd
         self.scene_pcd_tensor = torch.tensor(np.array(self.scene_pcd.points), dtype=torch.float32)
 
     def load_gt_json(self, gt_json_path):
+        """
+        Loads the ground truths JSON file into SDFLocalizer.
+        """
+
         self.GT_PATH = gt_json_path
         with open(gt_json_path, "r") as f:
             self.gt_json_data = json.load(f)
 
     def get_gt_Rt(self, id):
+        """
+        Returns the ground truth rotation and translation for a given pcd ID.
+        """
+
         Rt = self.gt_json_data[id]
         gt_R = torch.tensor(Rt["R"], dtype=torch.float32)
         gt_t = torch.tensor(Rt["t"], dtype=torch.float32)
@@ -198,13 +177,20 @@ class SDFLocalizer():
         return gt_R, gt_t
 
     def initialize_Rt_with_principal_axes(self):
-        # self.R = self.__rot_mat_from_principal_axes(self.scene_pcd, self.gt_pcd).T
-        self.R = self.compute_rotation_matrix_from_two_axes(self.scene_pcd, self.gt_pcd).T
+        """
+        Initializes the R and t for localization
+        """
 
-        self.t = -torch.mean(self.scene_pcd_tensor, dim=0)
-        # self.t = torch.zeros(3, dtype=torch.float32)
+        self.R = self.__compute_rotation_matrix_from_two_axes(self.scene_pcd, self.gt_pcd).T # initialize rotation with 2 principal axes
+        self.t = -torch.mean(self.scene_pcd_tensor, dim=0) # initialize translation to the center of the scene point cloud
 
     def localize(self): 
+        """
+        Performs SDF guided object localization
+
+        Returns: R (torch.tensor): Estimated rotation matrix
+                t (torch.tensor): Estimated translation vector
+        """
 
         if self.visualize:
             vis = o3d.visualization.Visualizer()
@@ -237,7 +223,7 @@ class SDFLocalizer():
             sdf_normals = (self.R @ sdf_grads_tr.T).T  # Rotate SDF gradients
             sdf_normals = sdf_normals / sdf_normals.norm(dim=1, keepdim=True)
 
-            # Compute cosine similarity
+            # compute cosine similarity
             self.scene_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
             scene_normals_np = np.asarray(self.scene_pcd.normals)
             scene_normals = torch.tensor(scene_normals_np, dtype=torch.float32)
@@ -247,10 +233,10 @@ class SDFLocalizer():
             dF_dR = 2 * (1 - cos_sim).unsqueeze(1).unsqueeze(2) * outer 
             dF_dR = dF_dR.sum(dim=0)
 
-            # Update translation t
+            # update translation t
             self.t = self.t - self.STEP_SIZE * dF_dt
 
-            # Update Rotation R
+            # update Rotation R
             dR = -self.STEP_SIZE_ROT * dF_dR
             U, _, V = torch.svd(self.R + dR)
             self.R = U @ V.T
@@ -273,8 +259,11 @@ class SDFLocalizer():
                 vis.poll_events()
                 vis.update_renderer()
 
-        self.final_translation_error = torch.norm(torch.tensor(self.gt_pcd.get_center() - self.updated_pcd.get_center()))
-        self.final_add = torch.mean(torch.norm(torch.tensor(self.gt_pcd.points) - torch.tensor(self.updated_pcd.points), dim=1))
+        self.final_translation_error = torch.norm(torch.tensor(self.gt_pcd.get_center() - self.updated_pcd.get_center())) # L2 norm translation error
+        
+        kdtree = cKDTree(np.array(self.updated_pcd.points))  # Build KDTree for the estimated point cloud
+        distances, _ = kdtree.query(np.array(self.gt_pcd.points))  # Find nearest neighbors for each GT point
+        self.final_add = torch.mean(torch.tensor(distances))
 
         if self.visualize:
             vis.destroy_window()
@@ -287,11 +276,27 @@ class SDFLocalizer():
     
 
 if __name__ == "__main__":
+    """
+    To test out the SDF localizer on the drill, ensure you unzip the test_pcds.zip file in the root directory of the repo.
+    Simply run sdf_localizer.py to test the localizer on the drill object.
+
+    Change file paths as necessary.
+
+    Ensure the essential libraries are installed:
+    - open3d
+    - pytorch_volumetric
+    - scipy
+    - numpy
+    - matplotlib
+    - sklearn
+    - pytorch
+
+    """
 
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
-    TEST_RESULT_DIR = "Rt_error_add_test_result.json"
-    object_name = "wrench"
+    TEST_RESULT_DIR = "test_result_files/Rt_error_add_test_result.json"
+    object_name = "hammer" # try different objects, check test_pcds folder for options
 
     with open(TEST_RESULT_DIR, "r") as f:
         test_results = json.load(f)
@@ -300,24 +305,23 @@ if __name__ == "__main__":
     t_errs = []
     ADD_errs = []
 
-    for i in range(25):
+    for i in range(25): #do not change, there are only 25 test files per object
 
         gt_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, f"{object_name}.pcd"))
-        scene_pcd = o3d.io.read_point_cloud(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}/{object_name}_{i}.pcd")
+        scene_pcd = o3d.io.read_point_cloud(f"test_pcds/{object_name}/{object_name}_{i}.pcd")
 
         sdfl = SDFLocalizer()
-        sdfl.visualize = True
-        sdfl.load_gt_and_scene_pcd(gt_pcd, scene_pcd)
-        sdfl.load_gt_json(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}/ground_truths.json")
-        sdfl.construct_sdf(os.path.join(OBJS_DIR, f"{object_name}.obj"))
-        sdfl.initialize_Rt_with_principal_axes()
-        R, t = sdfl.localize()
+        sdfl.visualize = True #visualize localization in open3d
+        sdfl.load_gt_and_scene_pcd(gt_pcd, scene_pcd) #load gt and scene pcds
+        sdfl.load_gt_json(f"test_pcds/{object_name}/ground_truths.json") #load gt json file
+        sdfl.construct_sdf(os.path.join(OBJS_DIR, f"{object_name}.obj")) #construct SDF using pytorch volumetric
+        sdfl.initialize_Rt_with_principal_axes() #initialize R and t with principal axes
+        R, t = sdfl.localize() #run localization and get R, t
 
+        #calculate metrics
         gt_R, gt_t = sdfl.get_gt_Rt(f"{object_name}_{i}")
-
         model_points = copy.deepcopy(sdfl.scene_pcd)
         model_points.translate(gt_t).rotate(gt_R)
-
         result_points = copy.deepcopy(sdfl.scene_pcd)
         result_points.translate(t).rotate(R)
 
