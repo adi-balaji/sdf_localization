@@ -11,6 +11,8 @@ import time
 import json
 import copy
 
+o3d.utility.set_verbosity_level(o3d.utility.VerbosityLevel.Error)
+
 class SDFLocalizer():
 
     def __init__(self):
@@ -19,7 +21,7 @@ class SDFLocalizer():
         self.STEP_SIZE_ROT = 1e-5    # 1e-3, 1e-4, 5e-5, 1e-6 for partial
         self.plot_loss = False
         self.visualize = False
-        self.MAX_ITER = 1000
+        self.MAX_ITER = 100
         self.GT_PATH = None
         self.gt_json_data = None
 
@@ -286,9 +288,13 @@ if __name__ == "__main__":
 
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
-    object_name = "mug"
+    object_name = "banana"
 
-    # gt_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, f"{object_name}.pcd"))
+    with open(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_results.json", "r") as f:
+        test_results = json.load(f)
+
+    R_errs = []
+    t_errs = []
 
     for i in range(25):
 
@@ -315,6 +321,13 @@ if __name__ == "__main__":
         translation_error = sdfl.final_translation_error.item() # L2 norm
 
         print(f"R, t error: {(rotation_error, translation_error)}")
+
+        R_errs.append(rotation_error)
+        t_errs.append(translation_error)
+
+    test_results[f"{object_name}"] = {"R_err" : R_errs, "t_err" : t_errs}
+    with open(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_results.json", "w") as f:
+        json.dump(test_results, f, indent=4)
 
 
         
