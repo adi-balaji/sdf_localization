@@ -36,6 +36,7 @@ class SDFLocalizer():
 
         self.losses = []
         self.final_translation_errors = 0.0
+        self.final_add = 0.0
 
     def __random_so3_sample(n):
 
@@ -273,6 +274,7 @@ class SDFLocalizer():
                 vis.update_renderer()
 
         self.final_translation_error = torch.norm(torch.tensor(self.gt_pcd.get_center() - self.updated_pcd.get_center()))
+        self.final_add = torch.mean(torch.norm(torch.tensor(self.gt_pcd.points) - torch.tensor(self.updated_pcd.points), dim=1))
 
         if self.visualize:
             vis.destroy_window()
@@ -288,13 +290,15 @@ if __name__ == "__main__":
 
     OBJS_DIR = "objs/"
     PCD_DIR = "pcd/"
-    object_name = "banana"
+    TEST_RESULT_DIR = "Rt_error_add_test_result.json"
+    object_name = "wrench"
 
-    with open(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_results.json", "r") as f:
+    with open(TEST_RESULT_DIR, "r") as f:
         test_results = json.load(f)
 
     R_errs = []
     t_errs = []
+    ADD_errs = []
 
     for i in range(25):
 
@@ -319,14 +323,16 @@ if __name__ == "__main__":
 
         rotation_error = torch.norm(torch.eye(3) - R @ gt_R.T).item() #deviation of matrix products from identity
         translation_error = sdfl.final_translation_error.item() # L2 norm
+        ADD = sdfl.final_add.item()
 
-        print(f"R, t error: {(rotation_error, translation_error)}")
+        print(f"R, t, ADD error: {(rotation_error, translation_error, ADD)}")
 
         R_errs.append(rotation_error)
         t_errs.append(translation_error)
+        ADD_errs.append(ADD)
 
-    test_results[f"{object_name}"] = {"R_err" : R_errs, "t_err" : t_errs}
-    with open(f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_results.json", "w") as f:
+    test_results[f"{object_name}"] = {"R_err" : R_errs, "t_err" : t_errs, "ADD_err" : ADD_errs}
+    with open(TEST_RESULT_DIR, "w") as f:
         json.dump(test_results, f, indent=4)
 
 

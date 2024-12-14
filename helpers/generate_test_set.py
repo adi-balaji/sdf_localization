@@ -38,7 +38,7 @@ def translate_mesh(mesh, x, y, z):
     mesh.translate([x, y, z])
     return mesh
 
-object_name = "drill"
+object_name = "wrench"
 num_samples = 25
 OBJS_DIR = "/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/objs/"
 WRITE_DIR = f"/Users/adibalaji/Desktop/UMICH-24-25/manip/sdf_localization/test_pcds/{object_name}"
@@ -54,7 +54,7 @@ for i, R_sample in enumerate(R_samples):
     transformed_mesh = copy.deepcopy(mesh)
     transformed_mesh.rotate(R_sample, center=transformed_mesh.get_center())
     transformed_mesh.translate(t_samples[i])
-    pcd = transformed_mesh.sample_points_uniformly(number_of_points=1000)
+    pcd = transformed_mesh.sample_points_uniformly(number_of_points=700)
 
     o3d.io.write_point_cloud(f"{WRITE_DIR}/{object_name}_{i}.pcd", pcd)
     gt_log[f"{object_name}_{i}"] = {
