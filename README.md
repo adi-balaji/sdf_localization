@@ -17,20 +17,28 @@ The method is tested on objects from the YCB dataset for both complete and parti
 SDF-based localization of a drill:  
 The scene point cloud (red) is fit to the inertial Signed Distance Field (SDF) frame (blue), visualized as a point cloud, producing the object's 6-DOF pose.
 
+<div style="text-align: center;">
 <img src="images/example.png" width="500">
+</div>
 
 #### 2. PCA-Based Initialization
 Principal axes alignment brings the object closer to the ground truth, reducing the risk of local minima during optimization.
 
 **Before PCA Initialization**:  
-<img src="images/pca_visual.png" width="400">  
+<div style="text-align: center;">
+<img src="images/pca_visual.png" width="400">
+</div>
 
-**After PCA Initialization**:  
+**After PCA Initialization**:
+<div style="text-align: center;">
 <img src="images/init_transform.png" width="400">
+</div>
 
 #### 3. Gradient-Based Optimization
 Localization of a mustard bottle using gradient-based optimization:  
+<div style="text-align: center;">
 <img src="images/sdf_grad.png" width="500">  
+</div>
 
 The localization converged within ~100 iterations.
 
@@ -79,7 +87,7 @@ The localization converged within ~100 iterations.
 ---
 
 ### Usage
-All SDF localization functionality is encapsulated within the `SDFLocalizer` class. To run a test, simply execute `sdf_localizer.py`. You will require:
+All SDF localization functionality is encapsulated within the `SDFLocalizer` class in `sdf_localizer.py`. To run a test, simply execute `sdf_localizer.py` which has an examples script in the `__main__()` method. You will require:
 - Python 3.8+
 - [Pytorch Volumetric (for SDF queries)](https://github.com/UM-ARM-Lab/pytorch_volumetric)
 - PyTorch, NumPy, SciPy, sklearn, open3d, matplotlib
