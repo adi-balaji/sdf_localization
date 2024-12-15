@@ -61,7 +61,7 @@ The localization converged within ~100 iterations.
 
 3. **Average Distance (ADD):**
    - Evaluates the overall alignment between the object model and the scene by averaging the point-to-point distances between the transformed model and the ground truth:
-     $$\text{ADD} = \frac{1}{N} \sum_{i=1}^N \| (R_{est} \mathbf{p}_i + t_{est}) - (R_{gt} \mathbf{p}_i + t_{gt}) \|_2$$
+     ADD = (1 / N) Σ || (R_est p_i + t_est) - (R_gt p_i + t_gt) ||_2
    - Here, $N$ is the total number of points in the model, and $\mathbf{p}_i$ represents the points in the object model. This metric accounts for both rotation and translation errors and is widely used for pose estimation tasks.
 
 #### Metrics for YCB Objects (Complete Views)
