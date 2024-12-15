@@ -51,23 +51,17 @@ The localization converged within ~100 iterations.
 1. **Rotation Error ($R_{err}$):**
    - Measures the angular difference between the ground truth rotation and the estimated rotation. 
    - Specifically, $R_{err}$ is computed as the geodesic distance between the two rotation matrices:
-     $$
-     R_{err} = \arccos\left(\frac{\text{trace}(R_{gt}^T R_{est}) - 1}{2}\right)
-     $$
+     $$R_{err} = \arccos\left(\frac{\text{trace}(R_{gt}^T R_{est}) - 1}{2}\right)$$
    - It is reported in degrees and quantifies how accurately the object's orientation is recovered.
 
 2. **Translation Error ($t_{err}$):**
    - Represents the Euclidean distance between the ground truth translation vector ($t_{gt}$) and the estimated translation vector ($t_{est}$):
-     $$
-     t_{err} = \|t_{gt} - t_{est}\|_2
-     $$
+     $$t_{err} = \|t_{gt} - t_{est}\|_2$$
    - This measures how close the predicted object position is to the actual position in the 3D scene. It is reported in the same units as the point cloud (e.g., meters).
 
 3. **Average Distance (ADD):**
    - Evaluates the overall alignment between the object model and the scene by averaging the point-to-point distances between the transformed model and the ground truth:
-     $$
-     \text{ADD} = \frac{1}{N} \sum_{i=1}^N \| (R_{est} \mathbf{p}_i + t_{est}) - (R_{gt} \mathbf{p}_i + t_{gt}) \|_2
-     $$
+     $$\text{ADD} = \frac{1}{N} \sum_{i=1}^N \| (R_{est} \mathbf{p}_i + t_{est}) - (R_{gt} \mathbf{p}_i + t_{gt}) \|_2$$
    - Here, $N$ is the total number of points in the model, and $\mathbf{p}_i$ represents the points in the object model. This metric accounts for both rotation and translation errors and is widely used for pose estimation tasks.
 
 #### Metrics for YCB Objects (Complete Views)
