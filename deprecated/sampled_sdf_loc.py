@@ -76,12 +76,11 @@ def super_fibinacci_so3_samples(n_rotations):
 
 def pc_principal_axis(point_cloud):
     pc_np = np.asarray(point_cloud.points)
-    pca_pc = PCA(n_components=3)
+    pca_pc = PCA(n_components=2)
     pca_pc.fit(pc_np)
     eigen_vals_pc = pca_pc.explained_variance_
     axes_pc = pca_pc.components_
-    return axes_pc[0] * 3 * np.sqrt(eigen_vals_pc[0]) 
-
+    return axes_pc
 def rot_mat_from_principal_axes(pcd_scene, pcd_gt):
     a = pc_principal_axis(pcd_scene)
     b = pc_principal_axis(pcd_gt)
@@ -102,12 +101,50 @@ def rot_mat_from_principal_axes(pcd_scene, pcd_gt):
     R = torch.tensor(R, dtype=torch.float32)
     return R
 
+def compute_rotation_matrix_from_two_axes(scene_pcd, gt_pcd):
+    """
+    Computes the rotation matrix to align two principal axes of the scene to the SDF goal.
+
+    Parameters:
+        scene_axes (np.ndarray): A (2, 3) numpy array representing two principal axes of the scene point cloud.
+        sdf_axes (np.ndarray): A (2, 3) numpy array representing two principal axes of the SDF goal point cloud.
+
+    Returns:
+        torch.tensor: R (3, 3) rotation matrix that aligns the scene axes to the SDF axes.
+    """
+
+    scene_axes = pc_principal_axis(scene_pcd)
+    sdf_axes = pc_principal_axis(gt_pcd)
+
+    scene_axes = np.asarray(scene_axes)
+    sdf_axes = np.asarray(sdf_axes)
+    
+    scene_third_axis = np.cross(scene_axes[0], scene_axes[1])
+    sdf_third_axis = np.cross(sdf_axes[0], sdf_axes[1])
+    
+    # normalize the third axis
+    scene_third_axis = scene_third_axis / np.linalg.norm(scene_third_axis)
+    sdf_third_axis = sdf_third_axis / np.linalg.norm(sdf_third_axis)
+    
+    # construct 3 axis frame
+    scene_full_axes = np.vstack((scene_axes, scene_third_axis)).T  # (3, 3)
+    sdf_full_axes = np.vstack((sdf_axes, sdf_third_axis)).T        # (3, 3)
+    
+    # compute the rotation matrix by aligning the 3 axis frames
+    R = sdf_full_axes @ np.linalg.inv(scene_full_axes)
+    
+    # enforce SO(3) constraint using SVD
+    U, _, Vt = np.linalg.svd(R)
+    R = U @ Vt
+
+    return torch.tensor(R, dtype=torch.float32)
+
 OBJS_DIR = "objs/"
 PCD_DIR = "pcd/"
 RESOLUTION = 0.005
 DEVICE = "cpu"
-STEP_SIZE = 1e-3 # 1e-3, 1e-4
-STEP_SIZE_ROT = 1e-4    # 1e-3, 1e-4
+STEP_SIZE = 1e-4 # 1e-3, 1e-4
+STEP_SIZE_ROT = 3e-6    # 1e-3, 1e-4
 plot_loss = False
 visualize = True
 # R_samples = sample_six_opposite_rotations()
@@ -118,19 +155,19 @@ if visualize:
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name="SDF Localization")
 
-GT_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "drill.pcd"))
+GT_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "hammer.pcd"))
 GT_pcd.paint_uniform_color([0.0, 0.0, 0.7])
 updated_pcd = o3d.geometry.PointCloud()  # Initialize scene point cloud
 if visualize:
     vis.add_geometry(GT_pcd)
     vis.add_geometry(updated_pcd)
 
-obj = pv.MeshObjectFactory(os.path.join(OBJS_DIR, "drill.obj"))  # Create mesh object for PV
-drill_sdf = pv.MeshSDF(obj)  # Compute SDF for the mesh object
+obj = pv.MeshObjectFactory(os.path.join(OBJS_DIR, "hammer.obj"))  # Create mesh object for PV
+hammer_sdf = pv.MeshSDF(obj)  # Compute SDF for the mesh object
 
-drill_view_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "transformed_large_drill.pcd"))
-drill_np = np.asarray(drill_view_pcd.points)
-drill_pcd_tensor = torch.tensor(drill_np, dtype=torch.float32)  # Convert scene point cloud to tensor
+hammer_view_pcd = o3d.io.read_point_cloud(os.path.join(PCD_DIR, "partial_view_hammer.pcd"))
+hammer_np = np.asarray(hammer_view_pcd.points)
+hammer_pcd_tensor = torch.tensor(hammer_np, dtype=torch.float32)  # Convert scene point cloud to tensor
 
 min_loss = float('inf')
 min_loss_R = None
@@ -138,8 +175,8 @@ min_loss_t = None
 
 for j, init_R in enumerate(R_samples):
 
-    t = torch.zeros(3)
-    R = init_R
+    t = torch.ones(3)
+    R = compute_rotation_matrix_from_two_axes(hammer_view_pcd, GT_pcd).T # Initialize rotation matrix
     losses = []
     rot_losses = []
 
@@ -154,10 +191,10 @@ for j, init_R in enumerate(R_samples):
         ax.legend()
 
     # Objective function
-    while len(losses) < 1000:
+    while len(losses) < 700:
         
-        t_pcd = drill_pcd_tensor @ R + t.T  # transformation
-        sdf_vals_tr, sdf_grads_tr = drill_sdf(t_pcd)  # SDF values and gradients
+        t_pcd = hammer_pcd_tensor @ R + t.T  # transformation
+        sdf_vals_tr, sdf_grads_tr = hammer_sdf(t_pcd)  # SDF values and gradients
 
         # compute dF/dt
         dF_dt = 2 * (sdf_vals_tr[:, None] * sdf_grads_tr).sum(dim=0)
@@ -168,8 +205,8 @@ for j, init_R in enumerate(R_samples):
         sdf_normals = sdf_normals / sdf_normals.norm(dim=1, keepdim=True)
 
         # Compute cosine similarity
-        drill_view_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
-        scene_normals_np = np.asarray(drill_view_pcd.normals)
+        hammer_view_pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30))
+        scene_normals_np = np.asarray(hammer_view_pcd.normals)
         scene_normals = torch.tensor(scene_normals_np, dtype=torch.float32)
         cos_sim = (scene_normals * sdf_normals).sum(dim=1)  # Dot product
 
@@ -223,7 +260,7 @@ print(min_loss_R)
 print("Translation:")
 print(min_loss_t)
 
-o3d.visualization.draw_geometries([GT_pcd, drill_view_pcd.rotate(min_loss_R.T.numpy(), center=drill_view_pcd.get_center()).translate(-min_loss_t.numpy())])
+o3d.visualization.draw_geometries([GT_pcd, hammer_view_pcd.rotate(min_loss_R.T.numpy(), center=hammer_view_pcd.get_center()).translate(-min_loss_t.numpy())])
 
 
 
