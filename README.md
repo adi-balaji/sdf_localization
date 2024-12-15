@@ -51,7 +51,7 @@ The localization converged within ~100 iterations.
 1. **Rotation Error ($R_{err}$):**
    - Measures the angular difference between the ground truth rotation and the estimated rotation. 
    - Specifically, $R_{err}$ is computed as the deviation of their product from the identity:
-     $$ R_{err} = || \ I - \hat{R}R^{*T} \ ||$$
+     $$R_{err} = || I - R_{est}R_{gt} ||$$
    - It is reported in degrees and quantifies how accurately the object's orientation is recovered.
 
 2. **Translation Error ($t_{err}$):**
