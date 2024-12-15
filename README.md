@@ -1,4 +1,4 @@
-# SDF-Based 3D Object Localization
+# 3D Object Localization Using Signed Distance Fields
 
 Accurately localizing objects in three-dimensional space is a foundational challenge in robotics, enabling tasks like perception, manipulation, and navigation. This repository presents a novel approach to object localization using a **Signed Distance Field (SDF)** representation of the target object. Our method leverages geometric cues from the SDF to align the object's 3D point cloud with the SDF surface, enabling robust 6-DOF pose estimation for various object types.
 
